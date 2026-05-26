@@ -56,6 +56,7 @@ import com.example.screendex.ui.theme.ScreenDexTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
+import androidx.compose.foundation.clickable
 
 private val ScreenDexYellow = Color(0xFFF4C542)
 private val ScreenDexInk = Color(0xFF171717)
@@ -63,10 +64,18 @@ private val ScreenDexSoftGray = Color(0xFFF2F2F2)
 
 data class HomeUiState(
     val isLoading: Boolean = true,
+    val selectedCategory: HomeCategory = HomeCategory.Movies,
     val popularMovies: List<Movie> = emptyList(),
     val trendingMovies: List<Movie> = emptyList(),
     val errorMessage: String? = null
 )
+enum class HomeCategory(
+    val label: String
+) {
+    Movies("Film"),
+    Series("Série"),
+    Anime("Anime")
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,17 +113,36 @@ fun HomeScreen(
 ) {
     var state by remember { mutableStateOf(HomeUiState()) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(state.selectedCategory) {
+        state = state.copy(
+            isLoading = true,
+            popularMovies = emptyList(),
+            trendingMovies = emptyList(),
+            errorMessage = null
+        )
+
         state = try {
-            HomeUiState(
+            val popular = when (state.selectedCategory) {
+                HomeCategory.Movies -> repository.getPopularMovies()
+                HomeCategory.Series -> repository.getPopularSeries()
+                HomeCategory.Anime -> repository.getPopularAnime()
+            }
+
+            val trending = when (state.selectedCategory) {
+                HomeCategory.Movies -> repository.getTrendingMovies()
+                HomeCategory.Series -> repository.getTrendingSeries()
+                HomeCategory.Anime -> repository.getTrendingAnime()
+            }
+
+            state.copy(
                 isLoading = false,
-                popularMovies = repository.getPopularMovies(),
-                trendingMovies = repository.getTrendingMovies()
+                popularMovies = popular,
+                trendingMovies = trending
             )
         } catch (exception: Exception) {
-            HomeUiState(
+            state.copy(
                 isLoading = false,
-                errorMessage = exception.message ?: "Impossible de charger les films."
+                errorMessage = exception.message ?: "Impossible de charger les contenus."
             )
         }
     }
@@ -135,7 +163,12 @@ fun HomeScreen(
         }
 
         item {
-            CategoryRow()
+            CategoryRow(
+                selectedCategory = state.selectedCategory,
+                onCategorySelected = { category ->
+                    state = state.copy(selectedCategory = category)
+                }
+            )
         }
 
         when {
@@ -228,22 +261,36 @@ private fun SearchPlaceholder() {
 }
 
 @Composable
-private fun CategoryRow() {
+private fun CategoryRow(
+    selectedCategory: HomeCategory,
+    onCategorySelected: (HomeCategory) -> Unit
+) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item { CategoryChip(text = "Film", selected = true) }
-        item { CategoryChip(text = "Série", selected = false) }
-        item { CategoryChip(text = "Anime", selected = false) }
+        items(HomeCategory.entries) { category ->
+            CategoryChip(
+                text = category.label,
+                selected = category == selectedCategory,
+                onClick = {
+                    onCategorySelected(category)
+                }
+            )
+        }
     }
 }
 
 @Composable
-private fun CategoryChip(text: String, selected: Boolean) {
+private fun CategoryChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
     Text(
         text = text,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
             .background(if (selected) ScreenDexYellow else ScreenDexSoftGray)
             .padding(horizontal = 24.dp, vertical = 10.dp),
         color = ScreenDexInk,

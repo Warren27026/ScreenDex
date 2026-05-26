@@ -71,6 +71,26 @@ class TmdbRepository {
             connection.disconnect()
         }
     }
+    suspend fun getPopularSeries(): List<Movie> {
+        return getMovieList("tv/popular?language=fr-FR&page=1")
+    }
+
+    suspend fun getTrendingSeries(): List<Movie> {
+        return getMovieList("trending/tv/week?language=fr-FR")
+    }
+
+    suspend fun getPopularAnime(): List<Movie> {
+        return getMovieList(
+            "discover/tv?language=fr-FR&page=1&with_genres=16&with_origin_country=JP&sort_by=popularity.desc"
+        )
+    }
+
+    suspend fun getTrendingAnime(): List<Movie> {
+        return getMovieList(
+            "discover/movie?language=fr-FR&page=1&with_genres=16&with_origin_country=JP&sort_by=popularity.desc"
+        )
+    }
+
 
     companion object {
         private const val BASE_URL = "https://api.themoviedb.org/3/"
