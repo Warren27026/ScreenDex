@@ -57,6 +57,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 
 private val ScreenDexYellow = Color(0xFFF4C542)
 private val ScreenDexInk = Color(0xFF171717)
@@ -67,14 +73,18 @@ data class HomeUiState(
     val selectedCategory: HomeCategory = HomeCategory.Movies,
     val popularMovies: List<Movie> = emptyList(),
     val trendingMovies: List<Movie> = emptyList(),
+    val searchQuery: String = "",
+    val searchResults: List<Movie> = emptyList(),
+    val isSearching: Boolean = false,
     val errorMessage: String? = null
 )
 enum class HomeCategory(
-    val label: String
+    val label: String,
+    val searchType: String
 ) {
-    Movies("Film"),
-    Series("Série"),
-    Anime("Anime")
+    Movies("Film", "movies"),
+    Series("Série", "series"),
+    Anime("Anime", "anime")
 }
 
 class MainActivity : ComponentActivity() {
@@ -105,14 +115,16 @@ fun ScreenDexApp() {
         }
     }
 }
-
+@OptIn(FlowPreview::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     repository: TmdbRepository = remember { TmdbRepository() }
 ) {
     var state by remember { mutableStateOf(HomeUiState()) }
-
+    LaunchedEffect(state.selectedCategory) {
+        state = state.copy(searchQuery = "", searchResults = emptyList())
+    }
     LaunchedEffect(state.selectedCategory) {
         state = state.copy(
             isLoading = true,
@@ -146,6 +158,38 @@ fun HomeScreen(
             )
         }
     }
+    LaunchedEffect(Unit) {
+        snapshotFlow { state.searchQuery }
+            .debounce(500)
+            .distinctUntilChanged()
+            .collectLatest { query ->
+                if (query.length < 2) {
+                    state = state.copy(
+                        searchResults = emptyList(),
+                        isSearching = false
+                    )
+                    return@collectLatest
+                }
+
+                state = state.copy(isSearching = true)
+
+                state = try {
+                    state.copy(
+                        searchResults = repository.searchMovies(
+                            query = query,
+                            category = state.selectedCategory.searchType
+                        ),
+                        isSearching = false,
+                        errorMessage = null
+                    )
+                } catch (exception: Exception) {
+                    state.copy(
+                        isSearching = false,
+                        errorMessage = exception.message ?: "Recherche impossible."
+                    )
+                }
+            }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -159,7 +203,12 @@ fun HomeScreen(
         }
 
         item {
-            SearchPlaceholder()
+            SearchField(
+                value = state.searchQuery,
+                onValueChange = { query ->
+                    state = state.copy(searchQuery = query)
+                }
+            )
         }
 
         item {
@@ -170,7 +219,22 @@ fun HomeScreen(
                 }
             )
         }
+        if (state.searchQuery.length >= 2) {
+            item {
+                SectionTitle("Résultats")
+                Spacer(modifier = Modifier.height(12.dp))
 
+                if (state.isSearching) {
+                    LoadingState()
+                } else if (state.searchResults.isEmpty()) {
+                    EmptySearchState()
+                } else {
+                    MoviePosterRow(movies = state.searchResults)
+                }
+            }
+
+            return@LazyColumn
+        }
         when {
             state.isLoading -> {
                 item {
@@ -247,16 +311,21 @@ private fun ProfileBubble() {
 }
 
 @Composable
-private fun SearchPlaceholder() {
-    Text(
-        text = "Rechercher un film",
+private fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(ScreenDexSoftGray)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        color = ScreenDexInk.copy(alpha = 0.6f)
+            .height(56.dp),
+        placeholder = {
+            Text("Rechercher un film")
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(8.dp)
     )
 }
 
@@ -508,5 +577,20 @@ private fun ErrorState(message: String) {
 fun ScreenDexPreview() {
     ScreenDexTheme(dynamicColor = false) {
         ScreenDexApp()
+    }
+}
+
+@Composable
+private fun EmptySearchState() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Aucun résultat",
+            color = ScreenDexInk.copy(alpha = 0.6f)
+        )
     }
 }

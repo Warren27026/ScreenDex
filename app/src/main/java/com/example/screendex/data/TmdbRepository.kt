@@ -23,10 +23,18 @@ class TmdbRepository {
         return getMovieList("trending/movie/week?language=fr-FR")
     }
 
-    suspend fun searchMovies(query: String): List<Movie> {
+    suspend fun searchMovies(query: String, category: String): List<Movie> {
         if (query.isBlank()) return emptyList()
+
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        return getMovieList("search/movie?query=$encodedQuery&language=fr-FR&page=1&include_adult=false&region=FR")
+
+        val path = when (category) {
+            "series" -> "search/tv?query=$encodedQuery&language=fr-FR&page=1&include_adult=false"
+            "anime" -> "search/multi?query=$encodedQuery&language=fr-FR&page=1&include_adult=false"
+            else -> "search/movie?query=$encodedQuery&language=fr-FR&page=1&include_adult=false&region=FR"
+        }
+
+        return getMovieList(path)
     }
 
     suspend fun getMovieDetails(movieId: Int): Movie {
