@@ -8,6 +8,7 @@ data class TmdbMovieDto(
     val backdropPath: String?,
     val voteAverage: Double?,
     val releaseDate: String?,
+    val numberOfSeasons: Int?
 )
 
 data class Movie(
@@ -18,17 +19,21 @@ data class Movie(
     val backdropUrl: String?,
     val rating: String,
     val releaseYear: String,
+    val mediaType: String,
+    val numberOfSeasons: Int? = null
 )
 
-fun TmdbMovieDto.toMovie(): Movie {
+fun TmdbMovieDto.toMovie(mediaType: String = "movie"): Movie {
     return Movie(
         id = id,
         title = title.orEmpty().ifBlank { "Titre inconnu" },
         overview = overview.orEmpty().ifBlank { "Aucun synopsis disponible." },
         posterUrl = posterPath?.let { TmdbImage.poster(it) },
         backdropUrl = backdropPath?.let { TmdbImage.backdrop(it) },
-        rating = voteAverage?.let { String.format("%.1f", it) } ?: "-",
+        rating = voteAverage?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "-",
         releaseYear = releaseDate?.take(4).orEmpty(),
+        mediaType = mediaType,
+        numberOfSeasons = numberOfSeasons
     )
 }
 
