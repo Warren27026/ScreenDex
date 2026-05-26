@@ -56,18 +56,21 @@ import com.example.screendex.ui.theme.ScreenDexTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.foundation.clickable
 
 private val ScreenDexYellow = Color(0xFFF4C542)
 private val ScreenDexInk = Color(0xFF171717)
 private val ScreenDexSoftGray = Color(0xFFF2F2F2)
-
+sealed interface Screen {
+    data object Home : Screen
+    data class Detail(val movie: Movie) : Screen
+}
 data class HomeUiState(
     val isLoading: Boolean = true,
     val selectedCategory: HomeCategory = HomeCategory.Movies,
@@ -102,16 +105,34 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ScreenDexApp() {
+    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color.White
     ) {
-        Scaffold(
-            containerColor = Color.White
-        ) { innerPadding ->
-            HomeScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
+        when (val currentScreen = screen) {
+            Screen.Home -> {
+                Scaffold(
+                    containerColor = Color.White
+                ) { innerPadding ->
+                    HomeScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        onMovieClick = { movie ->
+                            screen = Screen.Detail(movie)
+                        }
+                    )
+                }
+            }
+
+            is Screen.Detail -> {
+                DetailScreen(
+                    movie = currentScreen.movie,
+                    onBack = {
+                        screen = Screen.Home
+                    }
+                )
+            }
         }
     }
 }
@@ -119,7 +140,8 @@ fun ScreenDexApp() {
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    repository: TmdbRepository = remember { TmdbRepository() }
+    repository: TmdbRepository = remember { TmdbRepository() },
+    onMovieClick: (Movie) -> Unit
 ) {
     var state by remember { mutableStateOf(HomeUiState()) }
     LaunchedEffect(state.selectedCategory) {
@@ -229,7 +251,10 @@ fun HomeScreen(
                 } else if (state.searchResults.isEmpty()) {
                     EmptySearchState()
                 } else {
-                    MoviePosterRow(movies = state.searchResults)
+                    MoviePosterRow(
+                        movies = state.trendingMovies,
+                        onMovieClick = onMovieClick
+                    )
                 }
             }
 
@@ -255,20 +280,31 @@ fun HomeScreen(
 
                     val featuredMovie = state.popularMovies.firstOrNull()
                     if (featuredMovie != null) {
-                        FeaturedMovieCard(movie = featuredMovie)
+                        FeaturedMovieCard(
+                            movie = featuredMovie,
+                            onClick = {
+                                onMovieClick(featuredMovie)
+                            }
+                        )
                     }
                 }
 
                 item {
                     SectionTitle("Tendances")
                     Spacer(modifier = Modifier.height(12.dp))
-                    MoviePosterRow(movies = state.trendingMovies)
+                    MoviePosterRow(
+                        movies = state.trendingMovies,
+                        onMovieClick = onMovieClick
+                    )
                 }
 
                 item {
                     SectionTitle("Populaires")
                     Spacer(modifier = Modifier.height(12.dp))
-                    MoviePosterRow(movies = state.popularMovies.drop(1))
+                    MoviePosterRow(
+                        movies = state.trendingMovies,
+                        onMovieClick = onMovieClick
+                    )
                 }
             }
         }
@@ -378,11 +414,15 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun FeaturedMovieCard(movie: Movie) {
+private fun FeaturedMovieCard(
+    movie: Movie,
+    onClick: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(178.dp),
+            .height(178.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = ScreenDexInk
@@ -433,7 +473,10 @@ private fun FeaturedMovieCard(movie: Movie) {
 }
 
 @Composable
-private fun MoviePosterRow(movies: List<Movie>) {
+private fun MoviePosterRow(
+    movies: List<Movie>,
+    onMovieClick: (Movie) -> Unit
+) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -441,15 +484,24 @@ private fun MoviePosterRow(movies: List<Movie>) {
             items = movies.take(12),
             key = { movie -> movie.id }
         ) { movie ->
-            MoviePoster(movie = movie)
+            MoviePoster(
+                movie = movie,
+                onClick = {
+                    onMovieClick(movie)
+                }
+            )
         }
     }
 }
-
 @Composable
-private fun MoviePoster(movie: Movie) {
+private fun MoviePoster(
+    movie: Movie,
+    onClick: () -> Unit
+) {
     Column(
-        modifier = Modifier.width(118.dp)
+        modifier = Modifier
+            .width(118.dp)
+            .clickable(onClick = onClick)
     ) {
         Card(
             modifier = Modifier
@@ -593,4 +645,93 @@ private fun EmptySearchState() {
             color = ScreenDexInk.copy(alpha = 0.6f)
         )
     }
+}
+@Composable
+fun DetailScreen(
+    movie: Movie,
+    onBack: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(390.dp)
+                    .background(ScreenDexInk)
+            ) {
+                RemoteImage(
+                    imageUrl = movie.backdropUrl ?: movie.posterUrl,
+                    contentDescription = movie.title,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                Text(
+                    text = "Retour",
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onBack)
+                        .background(Color.White)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    color = ScreenDexInk,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        item {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = movie.title,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ScreenDexInk
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    InfoChip("Note ${movie.rating}")
+
+                    if (movie.releaseYear.isNotBlank()) {
+                        InfoChip(movie.releaseYear)
+                    }
+                }
+
+                Text(
+                    text = "Synopsis",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ScreenDexInk
+                )
+
+                Text(
+                    text = movie.overview,
+                    fontSize = 16.sp,
+                    lineHeight = 23.sp,
+                    color = ScreenDexInk
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoChip(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(ScreenDexSoftGray)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        color = ScreenDexInk,
+        fontWeight = FontWeight.Bold
+    )
 }
