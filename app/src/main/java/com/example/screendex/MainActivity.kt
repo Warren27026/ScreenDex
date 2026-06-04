@@ -34,6 +34,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +76,7 @@ sealed interface Screen {
     data object Watchlist : Screen
     data object Profile : Screen
     data object EditProfile : Screen
+    data object Settings : Screen
     data class Detail(val movie: Movie) : Screen
 }
 
@@ -92,6 +94,7 @@ private fun Screen.currentTab(): MainTab? {
         Screen.Watchlist -> MainTab.Watchlist
         Screen.Profile -> MainTab.Profile
         Screen.EditProfile -> MainTab.Profile
+        Screen.Settings -> MainTab.Profile
         is Screen.Detail -> null
     }
 }
@@ -225,7 +228,8 @@ fun ScreenDexApp() {
                         modifier = Modifier.padding(innerPadding),
                         profile = userProfile,
                         watchlistCount = watchlist.size,
-                        onEditProfile = { screen = Screen.EditProfile }
+                        onEditProfile = { screen = Screen.EditProfile },
+                        onSettings = { screen = Screen.Settings }
                     )
                 }
             }
@@ -239,6 +243,13 @@ fun ScreenDexApp() {
                         profileStorage.save(updatedProfile)
                         screen = Screen.Profile
                     }
+                )
+            }
+
+            Screen.Settings -> {
+                SettingsScreen(
+                    onBack = { screen = Screen.Profile },
+                    watchlistCount = watchlist.size
                 )
             }
 
@@ -578,7 +589,8 @@ fun ProfileScreen(
     modifier: Modifier = Modifier,
     profile: UserProfile,
     watchlistCount: Int,
-    onEditProfile: () -> Unit
+    onEditProfile: () -> Unit,
+    onSettings: () -> Unit
 ) {
     LazyColumn(
         modifier = modifier
@@ -650,7 +662,7 @@ fun ProfileScreen(
             ProfileActionCard(
                 title = "Paramètres",
                 subtitle = "Langue, notifications et données",
-                onClick = {}
+                onClick = onSettings
             )
         }
     }
@@ -735,6 +747,90 @@ fun EditProfileScreen(
                     .padding(horizontal = 16.dp, vertical = 15.dp),
                 color = ScreenDexInk,
                 fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    onBack: () -> Unit,
+    watchlistCount: Int
+) {
+    var newReleaseNotifications by remember { mutableStateOf(true) }
+    var weeklyEmails by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        item {
+            Text(
+                text = "Retour",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onBack)
+                    .background(ScreenDexSoftGray)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            Text(
+                text = "Paramètres",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+        }
+
+        item { SettingsSectionTitle("Affichage") }
+
+        item {
+            SettingsInfoRow(
+                title = "Langue",
+                value = "Français"
+            )
+        }
+
+        item { SettingsSectionTitle("Notifications") }
+
+        item {
+            SettingsToggleRow(
+                title = "Nouvelles sorties",
+                subtitle = "Recevoir les nouveautés populaires",
+                checked = newReleaseNotifications,
+                onCheckedChange = { newReleaseNotifications = it }
+            )
+        }
+
+        item {
+            SettingsToggleRow(
+                title = "Emails hebdo",
+                subtitle = "Résumé hebdomadaire par email",
+                checked = weeklyEmails,
+                onCheckedChange = { weeklyEmails = it }
+            )
+        }
+
+        item { SettingsSectionTitle("Données") }
+
+        item {
+            SettingsInfoRow(
+                title = "Watchlist locale",
+                value = "$watchlistCount élément${if (watchlistCount > 1) "s" else ""}"
+            )
+        }
+
+        item {
+            SettingsInfoRow(
+                title = "Source des contenus",
+                value = "TMDB"
             )
         }
     }
@@ -872,6 +968,91 @@ fun DetailScreen(
                     onClick = onToggleWatchlist
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(text: String) {
+    Text(
+        text = text,
+        fontSize = 20.sp,
+        fontWeight = FontWeight.Bold,
+        color = ScreenDexInk
+    )
+}
+
+@Composable
+private fun SettingsInfoRow(
+    title: String,
+    value: String
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = value,
+                color = ScreenDexInk.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(88.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = ScreenDexInk,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = subtitle,
+                    color = ScreenDexInk.copy(alpha = 0.6f),
+                    fontSize = 13.sp
+                )
+            }
+
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
         }
     }
 }
