@@ -56,6 +56,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.screendex.data.Movie
+import com.example.screendex.data.ProfileStorage
 import com.example.screendex.data.TmdbRepository
 import com.example.screendex.data.WatchlistStorage
 import com.example.screendex.ui.theme.ScreenDexTheme
@@ -136,9 +137,14 @@ fun ScreenDexApp() {
     val watchlistStorage = remember(context) {
         WatchlistStorage(context.applicationContext)
     }
+    val profileStorage = remember(context) {
+        ProfileStorage(context.applicationContext)
+    }
 
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
-    var userProfile by remember { mutableStateOf(UserProfile()) }
+    var userProfile by remember {
+        mutableStateOf(profileStorage.load())
+    }
     val watchlist = remember { mutableStateListOf<Movie>() }
 
     LaunchedEffect(Unit) {
@@ -230,6 +236,7 @@ fun ScreenDexApp() {
                     onBack = { screen = Screen.Profile },
                     onSave = { updatedProfile ->
                         userProfile = updatedProfile
+                        profileStorage.save(updatedProfile)
                         screen = Screen.Profile
                     }
                 )
