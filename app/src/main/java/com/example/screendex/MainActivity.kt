@@ -73,6 +73,7 @@ sealed interface Screen {
     data object Search : Screen
     data object Watchlist : Screen
     data object Profile : Screen
+    data object EditProfile : Screen
     data class Detail(val movie: Movie) : Screen
 }
 
@@ -89,6 +90,7 @@ private fun Screen.currentTab(): MainTab? {
         Screen.Search -> MainTab.Search
         Screen.Watchlist -> MainTab.Watchlist
         Screen.Profile -> MainTab.Profile
+        Screen.EditProfile -> MainTab.Profile
         is Screen.Detail -> null
     }
 }
@@ -108,6 +110,11 @@ data class HomeUiState(
     val popularMovies: List<Movie> = emptyList(),
     val trendingMovies: List<Movie> = emptyList(),
     val errorMessage: String? = null
+)
+
+data class UserProfile(
+    val name: String = "ScreenDex User",
+    val email: String = "warren@email.com"
 )
 
 class MainActivity : ComponentActivity() {
@@ -131,6 +138,7 @@ fun ScreenDexApp() {
     }
 
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var userProfile by remember { mutableStateOf(UserProfile()) }
     val watchlist = remember { mutableStateListOf<Movie>() }
 
     LaunchedEffect(Unit) {
@@ -163,12 +171,8 @@ fun ScreenDexApp() {
                 ) { innerPadding ->
                     HomeScreen(
                         modifier = Modifier.padding(innerPadding),
-                        onMovieClick = { movie ->
-                            screen = Screen.Detail(movie)
-                        },
-                        onSearchClick = {
-                            screen = Screen.Search
-                        }
+                        onMovieClick = { movie -> screen = Screen.Detail(movie) },
+                        onSearchClick = { screen = Screen.Search }
                     )
                 }
             }
@@ -180,12 +184,8 @@ fun ScreenDexApp() {
                 ) { innerPadding ->
                     SearchScreen(
                         modifier = Modifier.padding(innerPadding),
-                        onBack = {
-                            screen = Screen.Home
-                        },
-                        onMovieClick = { movie ->
-                            screen = Screen.Detail(movie)
-                        }
+                        onBack = { screen = Screen.Home },
+                        onMovieClick = { movie -> screen = Screen.Detail(movie) }
                     )
                 }
             }
@@ -198,12 +198,8 @@ fun ScreenDexApp() {
                     WatchlistScreen(
                         modifier = Modifier.padding(innerPadding),
                         movies = watchlist,
-                        onBack = {
-                            screen = Screen.Home
-                        },
-                        onMovieClick = { movie ->
-                            screen = Screen.Detail(movie)
-                        },
+                        onBack = { screen = Screen.Home },
+                        onMovieClick = { movie -> screen = Screen.Detail(movie) },
                         onRemoveMovie = { movie ->
                             watchlist.removeAll {
                                 it.id == movie.id && it.mediaType == movie.mediaType
@@ -221,9 +217,22 @@ fun ScreenDexApp() {
                 ) { innerPadding ->
                     ProfileScreen(
                         modifier = Modifier.padding(innerPadding),
-                        watchlistCount = watchlist.size
+                        profile = userProfile,
+                        watchlistCount = watchlist.size,
+                        onEditProfile = { screen = Screen.EditProfile }
                     )
                 }
+            }
+
+            Screen.EditProfile -> {
+                EditProfileScreen(
+                    profile = userProfile,
+                    onBack = { screen = Screen.Profile },
+                    onSave = { updatedProfile ->
+                        userProfile = updatedProfile
+                        screen = Screen.Profile
+                    }
+                )
             }
 
             is Screen.Detail -> {
@@ -233,9 +242,7 @@ fun ScreenDexApp() {
                         it.id == currentScreen.movie.id &&
                                 it.mediaType == currentScreen.movie.mediaType
                     },
-                    onBack = {
-                        screen = Screen.Home
-                    },
+                    onBack = { screen = Screen.Home },
                     onToggleWatchlist = {
                         val alreadySaved = watchlist.any {
                             it.id == currentScreen.movie.id &&
@@ -368,14 +375,10 @@ fun HomeScreen(
         }
 
         when {
-            state.isLoading -> {
-                item { LoadingState() }
-            }
+            state.isLoading -> item { LoadingState() }
 
             state.errorMessage != null -> {
-                item {
-                    ErrorState(message = state.errorMessage.orEmpty())
-                }
+                item { ErrorState(message = state.errorMessage.orEmpty()) }
             }
 
             else -> {
@@ -387,9 +390,7 @@ fun HomeScreen(
                     if (featuredMovie != null) {
                         FeaturedMovieCard(
                             movie = featuredMovie,
-                            onClick = {
-                                onMovieClick(featuredMovie)
-                            }
+                            onClick = { onMovieClick(featuredMovie) }
                         )
                     }
                 }
@@ -477,9 +478,7 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                placeholder = {
-                    Text("Dune, Naruto, Breaking Bad...")
-                },
+                placeholder = { Text("Dune, Naruto, Breaking Bad...") },
                 singleLine = true,
                 shape = RoundedCornerShape(8.dp)
             )
@@ -495,34 +494,22 @@ fun SearchScreen(
         }
 
         when {
-            query.length < 2 -> {
-                item {
-                    SearchMessage("Tape au moins 2 caractères pour lancer une recherche.")
-                }
+            query.length < 2 -> item {
+                SearchMessage("Tape au moins 2 caractères pour lancer une recherche.")
             }
 
-            isLoading -> {
-                item {
-                    LoadingState()
-                }
+            isLoading -> item { LoadingState() }
+
+            errorMessage != null -> item {
+                ErrorState(errorMessage.orEmpty())
             }
 
-            errorMessage != null -> {
-                item {
-                    ErrorState(errorMessage.orEmpty())
-                }
-            }
-
-            results.isEmpty() -> {
-                item {
-                    SearchMessage("Aucun résultat.")
-                }
+            results.isEmpty() -> item {
+                SearchMessage("Aucun résultat.")
             }
 
             else -> {
-                item {
-                    SectionTitle("Résultats")
-                }
+                item { SectionTitle("Résultats") }
 
                 items(
                     items = results,
@@ -530,9 +517,7 @@ fun SearchScreen(
                 ) { movie ->
                     SearchResultItem(
                         movie = movie,
-                        onClick = {
-                            onMovieClick(movie)
-                        }
+                        onClick = { onMovieClick(movie) }
                     )
                 }
             }
@@ -565,9 +550,7 @@ fun WatchlistScreen(
         }
 
         if (movies.isEmpty()) {
-            item {
-                SearchMessage("Ta watchlist est vide.")
-            }
+            item { SearchMessage("Ta watchlist est vide.") }
         } else {
             items(
                 items = movies,
@@ -575,12 +558,8 @@ fun WatchlistScreen(
             ) { movie ->
                 WatchlistItem(
                     movie = movie,
-                    onClick = {
-                        onMovieClick(movie)
-                    },
-                    onRemove = {
-                        onRemoveMovie(movie)
-                    }
+                    onClick = { onMovieClick(movie) },
+                    onRemove = { onRemoveMovie(movie) }
                 )
             }
         }
@@ -590,7 +569,9 @@ fun WatchlistScreen(
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
-    watchlistCount: Int
+    profile: UserProfile,
+    watchlistCount: Int,
+    onEditProfile: () -> Unit
 ) {
     LazyColumn(
         modifier = modifier
@@ -618,14 +599,14 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
-                    text = "ScreenDex User",
+                    text = profile.name,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = ScreenDexInk
                 )
 
                 Text(
-                    text = "warren@email.com",
+                    text = profile.email,
                     color = ScreenDexInk.copy(alpha = 0.6f)
                 )
             }
@@ -653,14 +634,100 @@ fun ProfileScreen(
         item {
             ProfileActionCard(
                 title = "Modifier le profil",
-                subtitle = "Nom, email et préférences"
+                subtitle = "Nom et email",
+                onClick = onEditProfile
             )
         }
 
         item {
             ProfileActionCard(
                 title = "Paramètres",
-                subtitle = "Langue, notifications et données"
+                subtitle = "Langue, notifications et données",
+                onClick = {}
+            )
+        }
+    }
+}
+
+@Composable
+fun EditProfileScreen(
+    profile: UserProfile,
+    onBack: () -> Unit,
+    onSave: (UserProfile) -> Unit
+) {
+    var name by remember { mutableStateOf(profile.name) }
+    var email by remember { mutableStateOf(profile.email) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        item {
+            Text(
+                text = "Retour",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onBack)
+                    .background(ScreenDexSoftGray)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            Text(
+                text = "Modifier Profil",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Nom utilisateur") },
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp)
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Email") },
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp)
+            )
+        }
+
+        item {
+            Text(
+                text = "Valider Modification",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        onSave(
+                            UserProfile(
+                                name = name.ifBlank { "ScreenDex User" },
+                                email = email.ifBlank { "warren@email.com" }
+                            )
+                        )
+                    }
+                    .background(ScreenDexYellow)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
             )
         }
     }
@@ -860,9 +927,7 @@ private fun CategoryRow(
             CategoryChip(
                 text = category.label,
                 selected = category == selectedCategory,
-                onClick = {
-                    onCategorySelected(category)
-                }
+                onClick = { onCategorySelected(category) }
             )
         }
     }
@@ -965,9 +1030,7 @@ private fun MoviePosterRow(
         ) { movie ->
             MoviePoster(
                 movie = movie,
-                onClick = {
-                    onMovieClick(movie)
-                }
+                onClick = { onMovieClick(movie) }
             )
         }
     }
@@ -1186,12 +1249,14 @@ private fun ProfileStatCard(
 @Composable
 private fun ProfileActionCard(
     title: String,
-    subtitle: String
+    subtitle: String,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(84.dp),
+            .height(84.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
     ) {
