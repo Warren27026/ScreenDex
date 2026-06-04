@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -69,6 +71,21 @@ sealed interface Screen {
     data object Search : Screen
     data object Watchlist : Screen
     data class Detail(val movie: Movie) : Screen
+}
+
+private enum class MainTab {
+    Home,
+    Search,
+    Watchlist
+}
+
+private fun Screen.currentTab(): MainTab? {
+    return when (this) {
+        Screen.Home -> MainTab.Home
+        Screen.Search -> MainTab.Search
+        Screen.Watchlist -> MainTab.Watchlist
+        is Screen.Detail -> null
+    }
 }
 
 enum class HomeCategory(
@@ -112,7 +129,16 @@ fun ScreenDexApp() {
     ) {
         when (val currentScreen = screen) {
             Screen.Home -> {
-                Scaffold(containerColor = Color.White) { innerPadding ->
+                MainScaffold(
+                    selectedTab = currentScreen.currentTab(),
+                    onTabSelected = { tab ->
+                        screen = when (tab) {
+                            MainTab.Home -> Screen.Home
+                            MainTab.Search -> Screen.Search
+                            MainTab.Watchlist -> Screen.Watchlist
+                        }
+                    }
+                ) { innerPadding ->
                     HomeScreen(
                         modifier = Modifier.padding(innerPadding),
                         onMovieClick = { movie ->
@@ -120,40 +146,61 @@ fun ScreenDexApp() {
                         },
                         onSearchClick = {
                             screen = Screen.Search
-                        },
-                        onWatchlistClick = {
-                            screen = Screen.Watchlist
                         }
                     )
                 }
             }
 
             Screen.Search -> {
-                SearchScreen(
-                    onBack = {
-                        screen = Screen.Home
-                    },
-                    onMovieClick = { movie ->
-                        screen = Screen.Detail(movie)
+                MainScaffold(
+                    selectedTab = currentScreen.currentTab(),
+                    onTabSelected = { tab ->
+                        screen = when (tab) {
+                            MainTab.Home -> Screen.Home
+                            MainTab.Search -> Screen.Search
+                            MainTab.Watchlist -> Screen.Watchlist
+                        }
                     }
-                )
+                ) { innerPadding ->
+                    SearchScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        onBack = {
+                            screen = Screen.Home
+                        },
+                        onMovieClick = { movie ->
+                            screen = Screen.Detail(movie)
+                        }
+                    )
+                }
             }
 
             Screen.Watchlist -> {
-                WatchlistScreen(
-                    movies = watchlist,
-                    onBack = {
-                        screen = Screen.Home
-                    },
-                    onMovieClick = { movie ->
-                        screen = Screen.Detail(movie)
-                    },
-                    onRemoveMovie = { movie ->
-                        watchlist.removeAll {
-                            it.id == movie.id && it.mediaType == movie.mediaType
+                MainScaffold(
+                    selectedTab = currentScreen.currentTab(),
+                    onTabSelected = { tab ->
+                        screen = when (tab) {
+                            MainTab.Home -> Screen.Home
+                            MainTab.Search -> Screen.Search
+                            MainTab.Watchlist -> Screen.Watchlist
                         }
                     }
-                )
+                ) { innerPadding ->
+                    WatchlistScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        movies = watchlist,
+                        onBack = {
+                            screen = Screen.Home
+                        },
+                        onMovieClick = { movie ->
+                            screen = Screen.Detail(movie)
+                        },
+                        onRemoveMovie = { movie ->
+                            watchlist.removeAll {
+                                it.id == movie.id && it.mediaType == movie.mediaType
+                            }
+                        }
+                    )
+                }
             }
 
             is Screen.Detail -> {
@@ -188,12 +235,47 @@ fun ScreenDexApp() {
 }
 
 @Composable
+private fun MainScaffold(
+    selectedTab: MainTab?,
+    onTabSelected: (MainTab) -> Unit,
+    content: @Composable (PaddingValues) -> Unit
+) {
+    Scaffold(
+        containerColor = Color.White,
+        bottomBar = {
+            NavigationBar(containerColor = Color.White) {
+                NavigationBarItem(
+                    selected = selectedTab == MainTab.Home,
+                    onClick = { onTabSelected(MainTab.Home) },
+                    icon = { Text("⌂") },
+                    label = { Text("Accueil") }
+                )
+
+                NavigationBarItem(
+                    selected = selectedTab == MainTab.Search,
+                    onClick = { onTabSelected(MainTab.Search) },
+                    icon = { Text("⌕") },
+                    label = { Text("Recherche") }
+                )
+
+                NavigationBarItem(
+                    selected = selectedTab == MainTab.Watchlist,
+                    onClick = { onTabSelected(MainTab.Watchlist) },
+                    icon = { Text("★") },
+                    label = { Text("Watchlist") }
+                )
+            }
+        },
+        content = content
+    )
+}
+
+@Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     repository: TmdbRepository = remember { TmdbRepository() },
     onMovieClick: (Movie) -> Unit,
-    onSearchClick: () -> Unit,
-    onWatchlistClick: () -> Unit
+    onSearchClick: () -> Unit
 ) {
     var state by remember { mutableStateOf(HomeUiState()) }
 
@@ -242,10 +324,6 @@ fun HomeScreen(
 
         item {
             SearchShortcut(onClick = onSearchClick)
-        }
-
-        item {
-            WatchlistShortcut(onClick = onWatchlistClick)
         }
 
         item {
@@ -308,6 +386,7 @@ fun HomeScreen(
 
 @Composable
 fun SearchScreen(
+    modifier: Modifier = Modifier,
     onBack: () -> Unit,
     onMovieClick: (Movie) -> Unit,
     repository: TmdbRepository = remember { TmdbRepository() }
@@ -344,25 +423,12 @@ fun SearchScreen(
     }
 
     LazyColumn(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(Color.White),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        item {
-            Text(
-                text = "Retour",
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onBack)
-                    .background(ScreenDexSoftGray)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                color = ScreenDexInk,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
         item {
             Text(
                 text = "Recherche",
@@ -444,31 +510,19 @@ fun SearchScreen(
 
 @Composable
 fun WatchlistScreen(
+    modifier: Modifier = Modifier,
     movies: List<Movie>,
     onBack: () -> Unit,
     onMovieClick: (Movie) -> Unit,
     onRemoveMovie: (Movie) -> Unit
 ) {
     LazyColumn(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(Color.White),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        item {
-            Text(
-                text = "Retour",
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onBack)
-                    .background(ScreenDexSoftGray)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                color = ScreenDexInk,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
         item {
             Text(
                 text = "Ma Watchlist",
@@ -682,22 +736,6 @@ private fun SearchShortcut(onClick: () -> Unit) {
             .background(ScreenDexSoftGray)
             .padding(horizontal = 16.dp, vertical = 17.dp),
         color = ScreenDexInk.copy(alpha = 0.6f)
-    )
-}
-
-@Composable
-private fun WatchlistShortcut(onClick: () -> Unit) {
-    Text(
-        text = "Ma Watchlist",
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .background(ScreenDexInk)
-            .padding(horizontal = 16.dp, vertical = 15.dp),
-        color = Color.White,
-        fontWeight = FontWeight.Bold
     )
 }
 
