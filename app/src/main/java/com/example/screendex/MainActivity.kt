@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -56,13 +57,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.screendex.data.Movie
 import com.example.screendex.data.TmdbRepository
+import com.example.screendex.data.WatchlistStorage
 import com.example.screendex.ui.theme.ScreenDexTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.URL
-import androidx.compose.ui.platform.LocalContext
-import com.example.screendex.data.WatchlistStorage
 
 private val ScreenDexYellow = Color(0xFFF4C542)
 private val ScreenDexInk = Color(0xFF171717)
@@ -72,13 +72,15 @@ sealed interface Screen {
     data object Home : Screen
     data object Search : Screen
     data object Watchlist : Screen
+    data object Profile : Screen
     data class Detail(val movie: Movie) : Screen
 }
 
 private enum class MainTab {
     Home,
     Search,
-    Watchlist
+    Watchlist,
+    Profile
 }
 
 private fun Screen.currentTab(): MainTab? {
@@ -86,6 +88,7 @@ private fun Screen.currentTab(): MainTab? {
         Screen.Home -> MainTab.Home
         Screen.Search -> MainTab.Search
         Screen.Watchlist -> MainTab.Watchlist
+        Screen.Profile -> MainTab.Profile
         is Screen.Detail -> null
     }
 }
@@ -139,6 +142,15 @@ fun ScreenDexApp() {
         watchlistStorage.save(watchlist)
     }
 
+    fun navigateToTab(tab: MainTab) {
+        screen = when (tab) {
+            MainTab.Home -> Screen.Home
+            MainTab.Search -> Screen.Search
+            MainTab.Watchlist -> Screen.Watchlist
+            MainTab.Profile -> Screen.Profile
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color.White
@@ -147,13 +159,7 @@ fun ScreenDexApp() {
             Screen.Home -> {
                 MainScaffold(
                     selectedTab = currentScreen.currentTab(),
-                    onTabSelected = { tab ->
-                        screen = when (tab) {
-                            MainTab.Home -> Screen.Home
-                            MainTab.Search -> Screen.Search
-                            MainTab.Watchlist -> Screen.Watchlist
-                        }
-                    }
+                    onTabSelected = ::navigateToTab
                 ) { innerPadding ->
                     HomeScreen(
                         modifier = Modifier.padding(innerPadding),
@@ -170,13 +176,7 @@ fun ScreenDexApp() {
             Screen.Search -> {
                 MainScaffold(
                     selectedTab = currentScreen.currentTab(),
-                    onTabSelected = { tab ->
-                        screen = when (tab) {
-                            MainTab.Home -> Screen.Home
-                            MainTab.Search -> Screen.Search
-                            MainTab.Watchlist -> Screen.Watchlist
-                        }
-                    }
+                    onTabSelected = ::navigateToTab
                 ) { innerPadding ->
                     SearchScreen(
                         modifier = Modifier.padding(innerPadding),
@@ -193,13 +193,7 @@ fun ScreenDexApp() {
             Screen.Watchlist -> {
                 MainScaffold(
                     selectedTab = currentScreen.currentTab(),
-                    onTabSelected = { tab ->
-                        screen = when (tab) {
-                            MainTab.Home -> Screen.Home
-                            MainTab.Search -> Screen.Search
-                            MainTab.Watchlist -> Screen.Watchlist
-                        }
-                    }
+                    onTabSelected = ::navigateToTab
                 ) { innerPadding ->
                     WatchlistScreen(
                         modifier = Modifier.padding(innerPadding),
@@ -216,6 +210,18 @@ fun ScreenDexApp() {
                             }
                             saveWatchlist()
                         }
+                    )
+                }
+            }
+
+            Screen.Profile -> {
+                MainScaffold(
+                    selectedTab = currentScreen.currentTab(),
+                    onTabSelected = ::navigateToTab
+                ) { innerPadding ->
+                    ProfileScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        watchlistCount = watchlist.size
                     )
                 }
             }
@@ -253,7 +259,6 @@ fun ScreenDexApp() {
     }
 }
 
-
 @Composable
 private fun MainScaffold(
     selectedTab: MainTab?,
@@ -283,6 +288,13 @@ private fun MainScaffold(
                     onClick = { onTabSelected(MainTab.Watchlist) },
                     icon = { Text("★") },
                     label = { Text("Watchlist") }
+                )
+
+                NavigationBarItem(
+                    selected = selectedTab == MainTab.Profile,
+                    onClick = { onTabSelected(MainTab.Profile) },
+                    icon = { Text("●") },
+                    label = { Text("Profil") }
                 )
             }
         },
@@ -571,6 +583,85 @@ fun WatchlistScreen(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun ProfileScreen(
+    modifier: Modifier = Modifier,
+    watchlistCount: Int
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp)
+    ) {
+        item {
+            Text(
+                text = "Mon Profil",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+        }
+
+        item {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                ProfileBubble()
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = "ScreenDex User",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ScreenDexInk
+                )
+
+                Text(
+                    text = "warren@email.com",
+                    color = ScreenDexInk.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ProfileStatCard(
+                    title = "Watchlist",
+                    value = watchlistCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+
+                ProfileStatCard(
+                    title = "Catégories",
+                    value = "3",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            ProfileActionCard(
+                title = "Modifier le profil",
+                subtitle = "Nom, email et préférences"
+            )
+        }
+
+        item {
+            ProfileActionCard(
+                title = "Paramètres",
+                subtitle = "Langue, notifications et données"
+            )
         }
     }
 }
@@ -1055,6 +1146,71 @@ private fun WatchlistItem(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 color = ScreenDexInk,
                 fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileStatCard(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.height(96.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = value,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+
+            Text(
+                text = title,
+                color = ScreenDexInk.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileActionCard(
+    title: String,
+    subtitle: String
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(84.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+
+            Text(
+                text = subtitle,
+                color = ScreenDexInk.copy(alpha = 0.6f),
+                fontSize = 13.sp
             )
         }
     }
