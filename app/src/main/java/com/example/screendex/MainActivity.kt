@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,6 +67,7 @@ private val ScreenDexSoftGray = Color(0xFFF2F2F2)
 sealed interface Screen {
     data object Home : Screen
     data object Search : Screen
+    data object Watchlist : Screen
     data class Detail(val movie: Movie) : Screen
 }
 
@@ -102,6 +104,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ScreenDexApp() {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    val watchlist = remember { mutableStateListOf<Movie>() }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -117,6 +120,9 @@ fun ScreenDexApp() {
                         },
                         onSearchClick = {
                             screen = Screen.Search
+                        },
+                        onWatchlistClick = {
+                            screen = Screen.Watchlist
                         }
                     )
                 }
@@ -133,11 +139,47 @@ fun ScreenDexApp() {
                 )
             }
 
+            Screen.Watchlist -> {
+                WatchlistScreen(
+                    movies = watchlist,
+                    onBack = {
+                        screen = Screen.Home
+                    },
+                    onMovieClick = { movie ->
+                        screen = Screen.Detail(movie)
+                    },
+                    onRemoveMovie = { movie ->
+                        watchlist.removeAll {
+                            it.id == movie.id && it.mediaType == movie.mediaType
+                        }
+                    }
+                )
+            }
+
             is Screen.Detail -> {
                 DetailScreen(
                     movie = currentScreen.movie,
+                    isInWatchlist = watchlist.any {
+                        it.id == currentScreen.movie.id &&
+                                it.mediaType == currentScreen.movie.mediaType
+                    },
                     onBack = {
                         screen = Screen.Home
+                    },
+                    onToggleWatchlist = {
+                        val alreadySaved = watchlist.any {
+                            it.id == currentScreen.movie.id &&
+                                    it.mediaType == currentScreen.movie.mediaType
+                        }
+
+                        if (alreadySaved) {
+                            watchlist.removeAll {
+                                it.id == currentScreen.movie.id &&
+                                        it.mediaType == currentScreen.movie.mediaType
+                            }
+                        } else {
+                            watchlist.add(currentScreen.movie)
+                        }
                     }
                 )
             }
@@ -150,7 +192,8 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     repository: TmdbRepository = remember { TmdbRepository() },
     onMovieClick: (Movie) -> Unit,
-    onSearchClick: () -> Unit
+    onSearchClick: () -> Unit,
+    onWatchlistClick: () -> Unit
 ) {
     var state by remember { mutableStateOf(HomeUiState()) }
 
@@ -199,6 +242,10 @@ fun HomeScreen(
 
         item {
             SearchShortcut(onClick = onSearchClick)
+        }
+
+        item {
+            WatchlistShortcut(onClick = onWatchlistClick)
         }
 
         item {
@@ -396,6 +443,201 @@ fun SearchScreen(
 }
 
 @Composable
+fun WatchlistScreen(
+    movies: List<Movie>,
+    onBack: () -> Unit,
+    onMovieClick: (Movie) -> Unit,
+    onRemoveMovie: (Movie) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        item {
+            Text(
+                text = "Retour",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onBack)
+                    .background(ScreenDexSoftGray)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            Text(
+                text = "Ma Watchlist",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+        }
+
+        if (movies.isEmpty()) {
+            item {
+                SearchMessage("Ta watchlist est vide.")
+            }
+        } else {
+            items(
+                items = movies,
+                key = { movie -> "${movie.mediaType}-${movie.id}" }
+            ) { movie ->
+                WatchlistItem(
+                    movie = movie,
+                    onClick = {
+                        onMovieClick(movie)
+                    },
+                    onRemove = {
+                        onRemoveMovie(movie)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DetailScreen(
+    movie: Movie,
+    isInWatchlist: Boolean,
+    onBack: () -> Unit,
+    onToggleWatchlist: () -> Unit,
+    repository: TmdbRepository = remember { TmdbRepository() }
+) {
+    var detailedMovie by remember(movie.id, movie.mediaType) { mutableStateOf(movie) }
+    var isLoadingDetails by remember(movie.id, movie.mediaType) { mutableStateOf(true) }
+
+    LaunchedEffect(movie.id, movie.mediaType) {
+        isLoadingDetails = true
+        detailedMovie = try {
+            repository.getDetails(movie)
+        } catch (exception: Exception) {
+            movie
+        }
+        isLoadingDetails = false
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(390.dp)
+                    .background(ScreenDexInk)
+            ) {
+                RemoteImage(
+                    imageUrl = detailedMovie.backdropUrl ?: detailedMovie.posterUrl,
+                    contentDescription = detailedMovie.title,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    ScreenDexInk.copy(alpha = 0.85f)
+                                )
+                            )
+                        )
+                )
+
+                Text(
+                    text = "Retour",
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onBack)
+                        .background(Color.White)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    color = ScreenDexInk,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(22.dp)
+                ) {
+                    Text(
+                        text = detailedMovie.title,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Note ${detailedMovie.rating}",
+                        color = ScreenDexYellow,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        item {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    InfoChip("Note ${detailedMovie.rating}")
+
+                    if (detailedMovie.releaseYear.isNotBlank()) {
+                        InfoChip(detailedMovie.releaseYear)
+                    }
+
+                    detailedMovie.numberOfSeasons?.let { seasons ->
+                        InfoChip("$seasons saison${if (seasons > 1) "s" else ""}")
+                    }
+                }
+
+                if (isLoadingDetails) {
+                    Text(
+                        text = "Chargement des détails...",
+                        color = ScreenDexInk.copy(alpha = 0.6f)
+                    )
+                }
+
+                Text(
+                    text = "Synopsis",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ScreenDexInk
+                )
+
+                Text(
+                    text = detailedMovie.overview,
+                    fontSize = 16.sp,
+                    lineHeight = 23.sp,
+                    color = ScreenDexInk
+                )
+
+                WatchlistButton(
+                    isInWatchlist = isInWatchlist,
+                    onClick = onToggleWatchlist
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun Header() {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -440,6 +682,22 @@ private fun SearchShortcut(onClick: () -> Unit) {
             .background(ScreenDexSoftGray)
             .padding(horizontal = 16.dp, vertical = 17.dp),
         color = ScreenDexInk.copy(alpha = 0.6f)
+    )
+}
+
+@Composable
+private fun WatchlistShortcut(onClick: () -> Unit) {
+    Text(
+        text = "Ma Watchlist",
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(ScreenDexInk)
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        color = Color.White,
+        fontWeight = FontWeight.Bold
     )
 }
 
@@ -670,132 +928,101 @@ private fun SearchResultItem(
 }
 
 @Composable
-fun DetailScreen(
+private fun WatchlistItem(
     movie: Movie,
-    onBack: () -> Unit,
-    repository: TmdbRepository = remember { TmdbRepository() }
+    onClick: () -> Unit,
+    onRemove: () -> Unit
 ) {
-    var detailedMovie by remember(movie.id, movie.mediaType) { mutableStateOf(movie) }
-    var isLoadingDetails by remember(movie.id, movie.mediaType) { mutableStateOf(true) }
-
-    LaunchedEffect(movie.id, movie.mediaType) {
-        isLoadingDetails = true
-        detailedMovie = try {
-            repository.getDetails(movie)
-        } catch (exception: Exception) {
-            movie
-        }
-        isLoadingDetails = false
-    }
-
-    LazyColumn(
+    Card(
         modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
+            .fillMaxWidth()
+            .height(132.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
     ) {
-        item {
-            Box(
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(390.dp)
-                    .background(ScreenDexInk)
+                    .width(76.dp)
+                    .height(108.dp)
+                    .clickable(onClick = onClick),
+                shape = RoundedCornerShape(8.dp)
             ) {
                 RemoteImage(
-                    imageUrl = detailedMovie.backdropUrl ?: detailedMovie.posterUrl,
-                    contentDescription = detailedMovie.title,
+                    imageUrl = movie.posterUrl,
+                    contentDescription = movie.title,
                     modifier = Modifier.fillMaxSize()
                 )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    ScreenDexInk.copy(alpha = 0.85f)
-                                )
-                            )
-                        )
-                )
-
-                Text(
-                    text = "Retour",
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onBack)
-                        .background(Color.White)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    color = ScreenDexInk,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(22.dp)
-                ) {
-                    Text(
-                        text = detailedMovie.title,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Note ${detailedMovie.rating}",
-                        color = ScreenDexYellow,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
-        }
 
-        item {
+            Spacer(modifier = Modifier.width(14.dp))
+
             Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onClick)
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    InfoChip("Note ${detailedMovie.rating}")
-
-                    if (detailedMovie.releaseYear.isNotBlank()) {
-                        InfoChip(detailedMovie.releaseYear)
-                    }
-
-                    detailedMovie.numberOfSeasons?.let { seasons ->
-                        InfoChip("$seasons saison${if (seasons > 1) "s" else ""}")
-                    }
-                }
-
-                if (isLoadingDetails) {
-                    Text(
-                        text = "Chargement des détails...",
-                        color = ScreenDexInk.copy(alpha = 0.6f)
-                    )
-                }
-
                 Text(
-                    text = "Synopsis",
-                    fontSize = 20.sp,
+                    text = movie.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Bold,
                     color = ScreenDexInk
                 )
 
+                if (movie.releaseYear.isNotBlank()) {
+                    Text(
+                        text = movie.releaseYear,
+                        color = ScreenDexInk.copy(alpha = 0.6f),
+                        fontSize = 13.sp
+                    )
+                }
+
                 Text(
-                    text = detailedMovie.overview,
-                    fontSize = 16.sp,
-                    lineHeight = 23.sp,
-                    color = ScreenDexInk
+                    text = "Note ${movie.rating}",
+                    color = ScreenDexInk,
+                    fontWeight = FontWeight.Medium
                 )
             }
+
+            Text(
+                text = "Retirer",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onRemove)
+                    .background(Color.White)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
+}
+
+@Composable
+private fun WatchlistButton(
+    isInWatchlist: Boolean,
+    onClick: () -> Unit
+) {
+    Text(
+        text = if (isInWatchlist) {
+            "Retirer de la Watchlist"
+        } else {
+            "Ajouter à la Watchlist"
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(if (isInWatchlist) ScreenDexInk else ScreenDexYellow)
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        color = if (isInWatchlist) Color.White else ScreenDexInk,
+        fontWeight = FontWeight.Bold
+    )
 }
 
 @Composable
