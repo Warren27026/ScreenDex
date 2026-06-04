@@ -39,7 +39,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,10 +55,7 @@ import com.example.screendex.data.Movie
 import com.example.screendex.data.TmdbRepository
 import com.example.screendex.ui.theme.ScreenDexTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.URL
 
@@ -69,6 +65,7 @@ private val ScreenDexSoftGray = Color(0xFFF2F2F2)
 
 sealed interface Screen {
     data object Home : Screen
+    data object Search : Screen
     data class Detail(val movie: Movie) : Screen
 }
 
@@ -86,9 +83,6 @@ data class HomeUiState(
     val selectedCategory: HomeCategory = HomeCategory.Movies,
     val popularMovies: List<Movie> = emptyList(),
     val trendingMovies: List<Movie> = emptyList(),
-    val searchQuery: String = "",
-    val searchResults: List<Movie> = emptyList(),
-    val isSearching: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -120,9 +114,23 @@ fun ScreenDexApp() {
                         modifier = Modifier.padding(innerPadding),
                         onMovieClick = { movie ->
                             screen = Screen.Detail(movie)
+                        },
+                        onSearchClick = {
+                            screen = Screen.Search
                         }
                     )
                 }
+            }
+
+            Screen.Search -> {
+                SearchScreen(
+                    onBack = {
+                        screen = Screen.Home
+                    },
+                    onMovieClick = { movie ->
+                        screen = Screen.Detail(movie)
+                    }
+                )
             }
 
             is Screen.Detail -> {
@@ -137,12 +145,12 @@ fun ScreenDexApp() {
     }
 }
 
-@OptIn(FlowPreview::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     repository: TmdbRepository = remember { TmdbRepository() },
-    onMovieClick: (Movie) -> Unit
+    onMovieClick: (Movie) -> Unit,
+    onSearchClick: () -> Unit
 ) {
     var state by remember { mutableStateOf(HomeUiState()) }
 
@@ -151,8 +159,6 @@ fun HomeScreen(
             isLoading = true,
             popularMovies = emptyList(),
             trendingMovies = emptyList(),
-            searchQuery = "",
-            searchResults = emptyList(),
             errorMessage = null
         )
 
@@ -182,39 +188,6 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        snapshotFlow { state.searchQuery }
-            .debounce(500)
-            .distinctUntilChanged()
-            .collectLatest { query ->
-                if (query.length < 2) {
-                    state = state.copy(
-                        searchResults = emptyList(),
-                        isSearching = false
-                    )
-                    return@collectLatest
-                }
-
-                state = state.copy(isSearching = true)
-
-                state = try {
-                    state.copy(
-                        searchResults = repository.searchMovies(
-                            query = query,
-                            category = state.selectedCategory.searchType
-                        ),
-                        isSearching = false,
-                        errorMessage = null
-                    )
-                } catch (exception: Exception) {
-                    state.copy(
-                        isSearching = false,
-                        errorMessage = exception.message ?: "Recherche impossible."
-                    )
-                }
-            }
-    }
-
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -225,12 +198,7 @@ fun HomeScreen(
         item { Header() }
 
         item {
-            SearchField(
-                value = state.searchQuery,
-                onValueChange = { query ->
-                    state = state.copy(searchQuery = query)
-                }
-            )
+            SearchShortcut(onClick = onSearchClick)
         }
 
         item {
@@ -242,67 +210,185 @@ fun HomeScreen(
             )
         }
 
-        if (state.searchQuery.length >= 2) {
-            item {
-                SectionTitle("Résultats")
-                Spacer(modifier = Modifier.height(12.dp))
+        when {
+            state.isLoading -> {
+                item { LoadingState() }
+            }
 
-                when {
-                    state.isSearching -> LoadingState()
-                    state.searchResults.isEmpty() -> EmptySearchState()
-                    else -> {
-                        MoviePosterRow(
-                            movies = state.searchResults,
-                            onMovieClick = onMovieClick
-                        )
-                    }
+            state.errorMessage != null -> {
+                item {
+                    ErrorState(message = state.errorMessage.orEmpty())
                 }
             }
-        } else {
-            when {
-                state.isLoading -> {
-                    item { LoadingState() }
-                }
 
-                state.errorMessage != null -> {
-                    item {
-                        ErrorState(message = state.errorMessage.orEmpty())
+            else -> {
+                item {
+                    SectionTitle("A la une")
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val featuredMovie = state.popularMovies.firstOrNull()
+                    if (featuredMovie != null) {
+                        FeaturedMovieCard(
+                            movie = featuredMovie,
+                            onClick = {
+                                onMovieClick(featuredMovie)
+                            }
+                        )
                     }
                 }
 
-                else -> {
-                    item {
-                        SectionTitle("A la une")
-                        Spacer(modifier = Modifier.height(12.dp))
+                item {
+                    SectionTitle("Tendances")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    MoviePosterRow(
+                        movies = state.trendingMovies,
+                        onMovieClick = onMovieClick
+                    )
+                }
 
-                        val featuredMovie = state.popularMovies.firstOrNull()
-                        if (featuredMovie != null) {
-                            FeaturedMovieCard(
-                                movie = featuredMovie,
-                                onClick = {
-                                    onMovieClick(featuredMovie)
-                                }
-                            )
+                item {
+                    SectionTitle("Populaires")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    MoviePosterRow(
+                        movies = state.popularMovies.drop(1),
+                        onMovieClick = onMovieClick
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchScreen(
+    onBack: () -> Unit,
+    onMovieClick: (Movie) -> Unit,
+    repository: TmdbRepository = remember { TmdbRepository() }
+) {
+    var query by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(HomeCategory.Movies) }
+    var results by remember { mutableStateOf<List<Movie>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(query, selectedCategory) {
+        if (query.length < 2) {
+            results = emptyList()
+            isLoading = false
+            errorMessage = null
+            return@LaunchedEffect
+        }
+
+        delay(500)
+        isLoading = true
+        errorMessage = null
+
+        try {
+            results = repository.searchMovies(
+                query = query,
+                category = selectedCategory.searchType
+            )
+        } catch (exception: Exception) {
+            errorMessage = exception.message ?: "Recherche impossible."
+            results = emptyList()
+        }
+
+        isLoading = false
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        item {
+            Text(
+                text = "Retour",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onBack)
+                    .background(ScreenDexSoftGray)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = ScreenDexInk,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            Text(
+                text = "Recherche",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = ScreenDexInk
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                placeholder = {
+                    Text("Dune, Naruto, Breaking Bad...")
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp)
+            )
+        }
+
+        item {
+            CategoryRow(
+                selectedCategory = selectedCategory,
+                onCategorySelected = { category ->
+                    selectedCategory = category
+                }
+            )
+        }
+
+        when {
+            query.length < 2 -> {
+                item {
+                    SearchMessage("Tape au moins 2 caractères pour lancer une recherche.")
+                }
+            }
+
+            isLoading -> {
+                item {
+                    LoadingState()
+                }
+            }
+
+            errorMessage != null -> {
+                item {
+                    ErrorState(errorMessage.orEmpty())
+                }
+            }
+
+            results.isEmpty() -> {
+                item {
+                    SearchMessage("Aucun résultat.")
+                }
+            }
+
+            else -> {
+                item {
+                    SectionTitle("Résultats")
+                }
+
+                items(
+                    items = results,
+                    key = { movie -> "${movie.mediaType}-${movie.id}" }
+                ) { movie ->
+                    SearchResultItem(
+                        movie = movie,
+                        onClick = {
+                            onMovieClick(movie)
                         }
-                    }
-
-                    item {
-                        SectionTitle("Tendances")
-                        Spacer(modifier = Modifier.height(12.dp))
-                        MoviePosterRow(
-                            movies = state.trendingMovies,
-                            onMovieClick = onMovieClick
-                        )
-                    }
-
-                    item {
-                        SectionTitle("Populaires")
-                        Spacer(modifier = Modifier.height(12.dp))
-                        MoviePosterRow(
-                            movies = state.popularMovies.drop(1),
-                            onMovieClick = onMovieClick
-                        )
-                    }
+                    )
                 }
             }
         }
@@ -343,21 +429,17 @@ private fun ProfileBubble() {
 }
 
 @Composable
-private fun SearchField(
-    value: String,
-    onValueChange: (String) -> Unit
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
+private fun SearchShortcut(onClick: () -> Unit) {
+    Text(
+        text = "Rechercher un film, une série, un anime",
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
-        placeholder = {
-            Text("Rechercher un film")
-        },
-        singleLine = true,
-        shape = RoundedCornerShape(8.dp)
+            .height(56.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(ScreenDexSoftGray)
+            .padding(horizontal = 16.dp, vertical = 17.dp),
+        color = ScreenDexInk.copy(alpha = 0.6f)
     )
 }
 
@@ -472,7 +554,7 @@ private fun MoviePosterRow(
     LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         items(
             items = movies.take(12),
-            key = { movie -> movie.id }
+            key = { movie -> "${movie.mediaType}-${movie.id}" }
         ) { movie ->
             MoviePoster(
                 movie = movie,
@@ -529,13 +611,72 @@ private fun MoviePoster(
 }
 
 @Composable
+private fun SearchResultItem(
+    movie: Movie,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(128.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ScreenDexSoftGray)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Card(
+                modifier = Modifier
+                    .width(76.dp)
+                    .height(104.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                RemoteImage(
+                    imageUrl = movie.posterUrl,
+                    contentDescription = movie.title,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = movie.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Bold,
+                    color = ScreenDexInk
+                )
+
+                if (movie.releaseYear.isNotBlank()) {
+                    Text(
+                        text = movie.releaseYear,
+                        color = ScreenDexInk.copy(alpha = 0.6f),
+                        fontSize = 13.sp
+                    )
+                }
+
+                Text(
+                    text = "Note ${movie.rating}",
+                    color = ScreenDexInk,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun DetailScreen(
     movie: Movie,
     onBack: () -> Unit,
     repository: TmdbRepository = remember { TmdbRepository() }
 ) {
-    var detailedMovie by remember(movie.id) { mutableStateOf(movie) }
-    var isLoadingDetails by remember(movie.id) { mutableStateOf(true) }
+    var detailedMovie by remember(movie.id, movie.mediaType) { mutableStateOf(movie) }
+    var isLoadingDetails by remember(movie.id, movie.mediaType) { mutableStateOf(true) }
 
     LaunchedEffect(movie.id, movie.mediaType) {
         isLoadingDetails = true
@@ -754,15 +895,15 @@ private fun ErrorState(message: String) {
 }
 
 @Composable
-private fun EmptySearchState() {
+private fun SearchMessage(message: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp),
+            .height(160.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "Aucun résultat",
+            text = message,
             color = ScreenDexInk.copy(alpha = 0.6f)
         )
     }
@@ -772,6 +913,6 @@ private fun EmptySearchState() {
 @Composable
 fun ScreenDexPreview() {
     ScreenDexTheme(dynamicColor = false) {
-        ScreenDexApp()
+        SearchMessage("Aperçu ScreenDex")
     }
 }
