@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.screendex.data.Movie
 import com.example.screendex.data.ProfileStorage
+import com.example.screendex.data.SettingsStorage
 import com.example.screendex.data.TmdbRepository
 import com.example.screendex.data.WatchlistStorage
 import com.example.screendex.ui.theme.ScreenDexTheme
@@ -121,6 +122,11 @@ data class UserProfile(
     val email: String = "warren@email.com"
 )
 
+data class UserSettings(
+    val newReleaseNotifications: Boolean = true,
+    val weeklyEmails: Boolean = false
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -143,10 +149,16 @@ fun ScreenDexApp() {
     val profileStorage = remember(context) {
         ProfileStorage(context.applicationContext)
     }
+    val settingsStorage = remember(context) {
+        SettingsStorage(context.applicationContext)
+    }
 
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var userProfile by remember {
         mutableStateOf(profileStorage.load())
+    }
+    var userSettings by remember {
+        mutableStateOf(settingsStorage.load())
     }
     val watchlist = remember { mutableStateListOf<Movie>() }
 
@@ -248,8 +260,13 @@ fun ScreenDexApp() {
 
             Screen.Settings -> {
                 SettingsScreen(
+                    settings = userSettings,
                     onBack = { screen = Screen.Profile },
-                    watchlistCount = watchlist.size
+                    watchlistCount = watchlist.size,
+                    onSettingsChange = { updatedSettings ->
+                        userSettings = updatedSettings
+                        settingsStorage.save(updatedSettings)
+                    }
                 )
             }
 
@@ -754,12 +771,11 @@ fun EditProfileScreen(
 
 @Composable
 fun SettingsScreen(
+    settings: UserSettings,
     onBack: () -> Unit,
-    watchlistCount: Int
+    watchlistCount: Int,
+    onSettingsChange: (UserSettings) -> Unit
 ) {
-    var newReleaseNotifications by remember { mutableStateOf(true) }
-    var weeklyEmails by remember { mutableStateOf(false) }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -804,8 +820,12 @@ fun SettingsScreen(
             SettingsToggleRow(
                 title = "Nouvelles sorties",
                 subtitle = "Recevoir les nouveautés populaires",
-                checked = newReleaseNotifications,
-                onCheckedChange = { newReleaseNotifications = it }
+                checked = settings.newReleaseNotifications,
+                onCheckedChange = { checked ->
+                    onSettingsChange(
+                        settings.copy(newReleaseNotifications = checked)
+                    )
+                }
             )
         }
 
@@ -813,8 +833,12 @@ fun SettingsScreen(
             SettingsToggleRow(
                 title = "Emails hebdo",
                 subtitle = "Résumé hebdomadaire par email",
-                checked = weeklyEmails,
-                onCheckedChange = { weeklyEmails = it }
+                checked = settings.weeklyEmails,
+                onCheckedChange = { checked ->
+                    onSettingsChange(
+                        settings.copy(weeklyEmails = checked)
+                    )
+                }
             )
         }
 
