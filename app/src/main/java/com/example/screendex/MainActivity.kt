@@ -61,6 +61,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.URL
+import androidx.compose.ui.platform.LocalContext
+import com.example.screendex.data.WatchlistStorage
 
 private val ScreenDexYellow = Color(0xFFF4C542)
 private val ScreenDexInk = Color(0xFF171717)
@@ -120,8 +122,22 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ScreenDexApp() {
+    val context = LocalContext.current
+    val watchlistStorage = remember(context) {
+        WatchlistStorage(context.applicationContext)
+    }
+
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     val watchlist = remember { mutableStateListOf<Movie>() }
+
+    LaunchedEffect(Unit) {
+        watchlist.clear()
+        watchlist.addAll(watchlistStorage.load())
+    }
+
+    fun saveWatchlist() {
+        watchlistStorage.save(watchlist)
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -198,6 +214,7 @@ fun ScreenDexApp() {
                             watchlist.removeAll {
                                 it.id == movie.id && it.mediaType == movie.mediaType
                             }
+                            saveWatchlist()
                         }
                     )
                 }
@@ -227,12 +244,15 @@ fun ScreenDexApp() {
                         } else {
                             watchlist.add(currentScreen.movie)
                         }
+
+                        saveWatchlist()
                     }
                 )
             }
         }
     }
 }
+
 
 @Composable
 private fun MainScaffold(
